@@ -1,15 +1,15 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  simple-websockets-chat-app
+  kintone-co-edit-endpoint
 
-  SAM Template for simple-websockets-chat-app that has the DynamoDB table and Lambda
+  SAM Template for kintone-co-edit-endpoint that has the DynamoDB table and Lambda
   functions needed to demonstrate the Websocket protocol on API Gateway.
 
 Parameters:
   TableName:
     Type: String
-    Default: 'simplechat_connections'
+    Default: 'kintone_connections'
     Description: (Required) The name of the new DynamoDB to store connection identifiers for each connected clients. Minimum 3 characters
     MinLength: 3
     MaxLength: 50
@@ -17,16 +17,16 @@ Parameters:
     ConstraintDescription: 'Required. Can be characters and underscore only. No numbers or special characters allowed.'
 
 Resources:
-  SimpleChatWebSocket:
+  KintoneCoEditWebSocket:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: SimpleChatWebSocket
+      Name: KintoneCoEditWebSocket
       ProtocolType: WEBSOCKET
       RouteSelectionExpression: "$request.body.action"
   ConnectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
       RouteKey: $connect
       AuthorizationType: NONE
       OperationName: ConnectRoute
@@ -37,16 +37,16 @@ Resources:
   ConnectInteg:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
       Description: Connect Integration
       IntegrationType: AWS_PROXY
-      IntegrationUri: 
+      IntegrationUri:
         Fn::Sub:
             arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnConnectFunction.Arn}/invocations
   DisconnectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
       RouteKey: $disconnect
       AuthorizationType: NONE
       OperationName: DisconnectRoute
@@ -57,16 +57,16 @@ Resources:
   DisconnectInteg:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
       Description: Disconnect Integration
       IntegrationType: AWS_PROXY
-      IntegrationUri: 
+      IntegrationUri:
         Fn::Sub:
             arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnDisconnectFunction.Arn}/invocations
   SendRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
       RouteKey: sendmessage
       AuthorizationType: NONE
       OperationName: SendRoute
@@ -77,10 +77,10 @@ Resources:
   SendInteg:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
       Description: Send Integration
       IntegrationType: AWS_PROXY
-      IntegrationUri: 
+      IntegrationUri:
         Fn::Sub:
             arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SendMessageFunction.Arn}/invocations
   Deployment:
@@ -90,14 +90,53 @@ Resources:
     - SendRoute
     - DisconnectRoute
     Properties:
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
   Stage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       StageName: Prod
       Description: Prod Stage
       DeploymentId: !Ref Deployment
-      ApiId: !Ref SimpleChatWebSocket
+      ApiId: !Ref KintoneCoEditWebSocket
+  KintoneCoEditHttp:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: KintoneCoEditHttp
+      ProtocolType: HTTP
+  UserIdsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref KintoneCoEditHttp
+      RouteKey: $default
+      AuthorizationType: NONE
+      OperationName: UserIdsRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref UserIdsInteg
+  UserIdsInteg:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref KintoneCoEditHttp
+      Description: Connect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetUserIdsFunction.Arn}/invocations
+      PayloadFormatVersion: 2.0
+  HttpDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+    - UserIdsRoute
+    Properties:
+      ApiId: !Ref KintoneCoEditHttp
+  HttpStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: Prod
+      Description: Prod Stage
+      DeploymentId: !Ref HttpDeployment
+      ApiId: !Ref KintoneCoEditHttp
   ConnectionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -126,10 +165,16 @@ Resources:
       Policies:
       - DynamoDBCrudPolicy:
           TableName: !Ref TableName
+      - Statement:
+        - Effect: Allow
+          Action:
+          - 'execute-api:ManageConnections'
+          Resource:
+          - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${KintoneCoEditWebSocket}/*'
   OnConnectPermission:
     Type: AWS::Lambda::Permission
     DependsOn:
-      - SimpleChatWebSocket
+      - KintoneCoEditWebSocket
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !Ref OnConnectFunction
@@ -147,10 +192,16 @@ Resources:
       Policies:
       - DynamoDBCrudPolicy:
           TableName: !Ref TableName
+      - Statement:
+        - Effect: Allow
+          Action:
+          - 'execute-api:ManageConnections'
+          Resource:
+          - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${KintoneCoEditWebSocket}/*'
   OnDisconnectPermission:
     Type: AWS::Lambda::Permission
     DependsOn:
-      - SimpleChatWebSocket
+      - KintoneCoEditWebSocket
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !Ref OnDisconnectFunction
@@ -173,33 +224,48 @@ Resources:
           Action:
           - 'execute-api:ManageConnections'
           Resource:
-          - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SimpleChatWebSocket}/*'
+          - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${KintoneCoEditWebSocket}/*'
   SendMessagePermission:
     Type: AWS::Lambda::Permission
     DependsOn:
-      - SimpleChatWebSocket
+      - KintoneCoEditWebSocket
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !Ref SendMessageFunction
       Principal: apigateway.amazonaws.com
+  GetUserIdsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: getuserids/
+      Handler: app.handler
+      MemorySize: 256
+      Runtime: nodejs12.x
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref TableName
+      - Statement:
+        - Effect: Allow
+          Action:
+          - 'execute-api:ManageConnections'
+          Resource:
+          - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${KintoneCoEditHttp}/*'
+  GetUserIdsPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - KintoneCoEditHttp
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GetUserIdsFunction
+      Principal: apigateway.amazonaws.com
 
 Outputs:
-  ConnectionsTableArn:
-    Description: "Connections table ARN"
-    Value: !GetAtt ConnectionsTable.Arn
-
-  OnConnectFunctionArn:
-    Description: "OnConnect function ARN"
-    Value: !GetAtt OnConnectFunction.Arn
-
-  OnDisconnectFunctionArn:
-    Description: "OnDisconnect function ARN"
-    Value: !GetAtt OnDisconnectFunction.Arn
-
-  SendMessageFunctionArn:
-    Description: "SendMessage function ARN"
-    Value: !GetAtt SendMessageFunction.Arn
-
   WebSocketURI:
     Description: "The WSS Protocol URI to connect to"
-    Value: !Join [ '', [ 'wss://', !Ref SimpleChatWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/',!Ref 'Stage'] ]
+    Value: !Join [ '', [ 'wss://', !Ref KintoneCoEditWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/',!Ref 'Stage'] ]
+
+  HttpURI:
+    Description: "The HTTPS Protocol URI to connect to"
+    Value: !Join [ '', [ 'https://', !Ref KintoneCoEditHttp, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/',!Ref 'Stage'] ]
